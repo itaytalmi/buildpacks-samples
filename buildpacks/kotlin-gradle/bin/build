@@ -39,6 +39,7 @@ if [[ ${jdk_url} != ${cached_jdk_url} ]] ; then
   wget -q -O - "$jdk_url" | tar pxz -C "${jdk_layer_dir}" --strip-components=1
 
   cat > "${jdk_layer_dir}.toml" << EOF
+[types]
 launch = true
 build = true
 cache = true
@@ -55,21 +56,21 @@ EOF
     echo "${JAVA_HOME}/jre/lib/amd64/server:${LD_LIBRARY_PATH}" > ${jdk_layer_dir}/env/LD_LIBRARY_PATH
   fi
 
-  mkdir -p ${jdk_layer_dir}/profile.d
-  cat > "${jdk_layer_dir}/profile.d/jdk.sh" << EOF
+  # Set the environment variables used at launch time
+  mkdir -p ${jdk_layer_dir}/env
+  echo ${jdk_layer_dir} > ${jdk_layer_dir}/env/JAVA_HOME.default
+  echo ${jdk_layer_dir}/jre/lib/amd64/server > ${jdk_layer_dir}/env/LD_LIBRARY_PATH.append
+fi
+
+# Set env variables to make jdk accessible for the gradle invocation below
+# This is the same logic as setting JAVA_HOME.default or LD_LIBRAY_PATH.append,
+# which suggests that we should factor out the gradle usage into its own buildpack.
 export JAVA_HOME=${jdk_layer_dir}
 if [[ -z \$LD_LIBRARY_PATH ]]; then
   export LD_LIBRARY_PATH="\$JAVA_HOME/jre/lib/amd64/server"
 else
   export LD_LIBRARY_PATH="\$JAVA_HOME/jre/lib/amd64/server:${LD_LIBRARY_PATH}"
 fi
-EOF
-fi
-
-# Set env variables to make jdk accessible
-for var in "$layers_dir"/jdk/env/*; do
-  declare "$(basename "$var")=$(<"$var")"
-done
 export PATH=${jdk_layer_dir}/bin:$PATH
 
 # 4. MAKE GRADLE CACHE LAYER
@@ -77,13 +78,16 @@ gradle_layer_dir="${layers_dir}/gradle"
 
 if [[ ! -d ${gradle_layer_dir} ]]; then
   mkdir -p ${gradle_layer_dir}
-  echo "cache = true" > ${gradle_layer_dir}.toml
+  cat >> ${gradle_layer_dir}.toml <<EOF
+[types]
+cache = true
+EOF
 fi
 ln -s ${gradle_layer_dir} $HOME/.gradle
 
 # 5. RUN BUILD
 echo "---> Running Gradle Wrapper"
-./gradlew clean build -x test --no-daemon
+GRADLE_OPTS=-Dorg.gradle.daemon=false ./gradlew clean build -x test
 
 # 6. SET DEFAULT START COMMAND
 target_dir="build/libs"
@@ -91,7 +95,7 @@ for jar_file in $(find "$target_dir" -maxdepth 1 -name "*.jar" -type f); do
   cat >> "${layers_dir}/launch.toml" <<EOL
 [[processes]]
 type = "web"
-command = "java -jar ${jar_file}"
+command = ["java", "-jar", "${jar_file}"]
 EOL
   break;
 done

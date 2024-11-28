@@ -1,10 +1,10 @@
 # Sample Builders
 
-A sample of builders that use the [stacks](../stacks/) in this repo.
+A sample of builders that use the [base images](../base-images/) in this repo.
 
 ### Contains:
 - [Alpine](alpine/)
-- [Jammy](jammy/)
+- [noble](noble/)
 
 ### Additional Resources
 
@@ -13,5 +13,5 @@ A sample of builders that use the [stacks](../stacks/) in this repo.
 ### What's next?
 
 Is that all? If you want to dive deeper, there are two final components you might want to learn about:
-- [Stacks](../stacks) marry the build-time and run-time environments for your code in the form of images under a common id.
+- [Base Images](../base-images) provide the build-time and run-time environments for your code.
 - [Buildpackages](../packages) allow easy distribution of buildpacks in image registries and simplify configuration and composition of builders and "meta" buildpacks.

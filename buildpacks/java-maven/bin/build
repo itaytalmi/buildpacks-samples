@@ -24,8 +24,8 @@ if [[ -r /etc/alpine-release ]]; then
   jdk_version="1.8.0_222"
 fi
 
-maven_url="https://apache.org/dist/maven/maven-3/3.5.4/binaries/apache-maven-3.5.4-bin.tar.gz"
-maven_version="3.5.4"
+maven_url="https://apache.org/dist/maven/maven-3/3.9.6/binaries/apache-maven-3.9.6-bin.tar.gz"
+maven_version="3.9.6"
 
 echo "---> Installing JDK"
 
@@ -42,6 +42,7 @@ if [[ ${jdk_url} != ${cached_jdk_url} ]] ; then
   wget -q -O - "$jdk_url" | tar pxz -C "${jdk_layer_dir}" --strip-components=1
 
   cat > "${jdk_layer_dir}.toml" << EOF
+[types]
 launch = true
 build = true
 cache = true
@@ -51,35 +52,31 @@ version = "${jdk_version}"
 url = "${jdk_url}"
 EOF
 
-  echo "$layers_dir"/jdk > "$layers_dir"/jdk/env/JAVA_HOME
-  if [[ -z ${LD_LIBRARY_PATH} ]]; then
-    echo "${JAVA_HOME}/jre/lib/amd64/server" > ${jdk_layer_dir}/env/LD_LIBRARY_PATH
-  else
-    echo "${JAVA_HOME}/jre/lib/amd64/server:${LD_LIBRARY_PATH}" > ${jdk_layer_dir}/env/LD_LIBRARY_PATH
-  fi
+  # Set the environment variables used at launch time
+  mkdir -p ${jdk_layer_dir}/env
+  echo ${jdk_layer_dir} > ${jdk_layer_dir}/env/JAVA_HOME.default
+  echo ${jdk_layer_dir}/jre/lib/amd64/server > ${jdk_layer_dir}/env/LD_LIBRARY_PATH.append
+fi
 
-  mkdir -p ${jdk_layer_dir}/profile.d
-  cat > "${jdk_layer_dir}/profile.d/jdk.sh" << EOF
+# Set env variables to make jdk accessible for the maven invocation below
+# This is the same logic as setting JAVA_HOME.default or LD_LIBRAY_PATH.append,
+# which suggests that we should factor out the mvn usage into its own buildpack.
 export JAVA_HOME=${jdk_layer_dir}
 if [[ -z \$LD_LIBRARY_PATH ]]; then
   export LD_LIBRARY_PATH="\$JAVA_HOME/jre/lib/amd64/server"
 else
   export LD_LIBRARY_PATH="\$JAVA_HOME/jre/lib/amd64/server:${LD_LIBRARY_PATH}"
 fi
-EOF
-fi
-
-# Set env variables to make jdk accessible
-for var in "$layers_dir"/jdk/env/*; do
-  declare "$(basename "$var")=$(<"$var")"
-done
 export PATH=${jdk_layer_dir}/bin:$PATH
 
 # 4. MAKE MAVEN M2 CACHE LAYER
 m2_layer_dir="${layers_dir}/maven_m2"
 if [[ ! -d ${m2_layer_dir} ]]; then
   mkdir -p ${m2_layer_dir}
-  echo "cache = true" > ${m2_layer_dir}.toml
+  cat > ${m2_layer_dir}.toml << EOF
+[types]
+cache = true
+EOF
 fi
 ln -s ${m2_layer_dir} $HOME/.m2
 
@@ -100,6 +97,7 @@ else
     mkdir -p "${maven_layer_dir}"
     wget -q -O - "${maven_url}" | tar pxz -C "${maven_layer_dir}" --strip-components=1
     cat > "${maven_layer_dir}.toml" << EOF
+[types]
 launch = true
 build = true
 cache = true
@@ -121,7 +119,8 @@ for jar_file in $(find "$target_dir" -maxdepth 1 -name "*.jar" -type f); do
   cat >> "${layers_dir}/launch.toml" <<EOL
 [[processes]]
 type = "web"
-command = "java -jar ${jar_file}"
+command = ["java", "-jar", "${jar_file}"]
+default = true
 EOL
   break;
 done
